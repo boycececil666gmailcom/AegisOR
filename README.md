@@ -296,6 +296,7 @@ AegisOR/
 ├── .env                      # Local AssemblyAI API credentials
 ├── .env.example              # Environment configuration template
 ├── .gitignore                # Git exclusion rules
+├── LICENSE                   # MIT License
 ├── README.md                 # System architecture and operational manual
 ├── app.py                    # Root entrypoint launcher delegating to src.app
 ├── requirements.txt          # Python dependencies (assemblyai, gradio, python-dotenv)
@@ -315,9 +316,10 @@ AegisOR/
 
 ### Installation & Configuration
 
-1. Clone or navigate to the workspace directory:
+1. Clone or navigate to the repository:
    ```bash
-   cd c:\Users\boyce\OneDrive\Desktop\ReAct_Demo
+   git clone https://github.com/boycececil666gmailcom/AegisOR.git
+   cd AegisOR
    ```
 
 2. Configure environment credentials in `.env`:
