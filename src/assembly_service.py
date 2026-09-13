@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 from src.models import Utterance
 
-# region Surgical Vocabulary Presets
+# region Surgical Lexicon
 SURGICAL_WORD_BOOST = [
     "Time-Out",
     "Universal Protocol",
@@ -98,27 +98,19 @@ class AssemblyAIService:
         self.procedure_guidelines: str = ""
         if self.api_key:
             aai.settings.api_key = self.api_key
-            print("[AssemblyAI-Init] Configured AssemblyAI API key")
+            print("[AssemblyAIService-__init__] Configured AssemblyAI API key")
         else:
-            print("[AssemblyAI-Init] Warning: assembly_ai_api not found in environment")
+            print("[AssemblyAIService-__init__] Warning: assembly_ai_api not found in environment")
 
     def set_custom_vocabulary(self, words: list[str]) -> list[str]:
-        cleaned = [w.strip() for w in words if w.strip()]
-        self.custom_vocabulary = sorted(set(cleaned))
-        print(
-            f"[AssemblyAI-Vocab] Updated custom vocabulary: {len(self.custom_vocabulary)} terms"
-        )
+        self.custom_vocabulary = sorted({w.strip() for w in words if w.strip()})
+        print(f"[AssemblyAIService-set_custom_vocabulary] Updated custom terms: {len(self.custom_vocabulary)}")
         return self.get_active_vocabulary()
 
     def add_vocabulary_words(self, words: list[str]) -> list[str]:
-        current = set(self.custom_vocabulary)
-        for w in words:
-            if w.strip():
-                current.add(w.strip())
+        current = set(self.custom_vocabulary) | {w.strip() for w in words if w.strip()}
         self.custom_vocabulary = sorted(current)
-        print(
-            f"[AssemblyAI-Vocab] Added terms, total custom vocabulary: {len(self.custom_vocabulary)}"
-        )
+        print(f"[AssemblyAIService-add_vocabulary_words] Active terms: {len(self.custom_vocabulary)}")
         return self.get_active_vocabulary()
 
     def get_active_vocabulary(self) -> list[str]:
@@ -126,14 +118,12 @@ class AssemblyAIService:
 
     def clear_custom_vocabulary(self) -> list[str]:
         self.custom_vocabulary = []
-        print("[AssemblyAI-Vocab] Reset custom vocabulary to baseline")
+        print("[AssemblyAIService-clear_custom_vocabulary] Reset custom vocabulary")
         return self.get_active_vocabulary()
 
     def set_procedure_guidelines(self, guidelines: str) -> None:
         self.procedure_guidelines = guidelines.strip()
-        print(
-            f"[AssemblyAI-Guidelines] Set procedural guideline: {self.procedure_guidelines[:40]}..."
-        )
+        print(f"[AssemblyAIService-set_procedure_guidelines] Set guideline: {self.procedure_guidelines[:40]}...")
 
     def transcribe(
         self,
@@ -143,22 +133,15 @@ class AssemblyAIService:
         enable_entities: bool = True,
         custom_boost_words: list[str] | None = None,
     ) -> dict[str, Any]:
-        print(f"[AssemblyAI-Transcribe] Ingesting audio source: {audio_source}")
-        boost_words = list(
-            set(self.get_active_vocabulary() + (custom_boost_words or []))
-        )
+        print(f"[AssemblyAIService-transcribe] Ingesting audio source: {audio_source}")
+        words = list(set(self.get_active_vocabulary() + (custom_boost_words or [])))
 
         config_kwargs: dict[str, Any] = {
-            "word_boost": boost_words,
+            "word_boost": words,
             "boost_param": "high",
+            "speaker_labels": enable_diarization,
+            "entity_detection": enable_entities,
         }
-
-        if enable_diarization:
-            config_kwargs["speaker_labels"] = True
-        if enable_entities:
-            config_kwargs["entity_detection"] = True
-
-        # Mutual exclusivity constraint enforced by AssemblyAI
         if generative_mode == "Summarization":
             config_kwargs["summarization"] = True
             config_kwargs["summary_model"] = aai.SummarizationModel.informative
@@ -166,81 +149,44 @@ class AssemblyAIService:
         elif generative_mode == "Auto Chapters":
             config_kwargs["auto_chapters"] = True
 
-        config = aai.TranscriptionConfig(**config_kwargs)
-        transcriber = aai.Transcriber()
-
         try:
-            transcript = transcriber.transcribe(audio_source, config=config)
+            transcript = aai.Transcriber().transcribe(
+                audio_source,
+                config=aai.TranscriptionConfig(**config_kwargs),
+            )
+            if transcript.status == aai.TranscriptStatus.error:
+                raise RuntimeError(transcript.error)
+
+            utterances = [
+                Utterance(speaker=str(u.speaker), start_sec=u.start / 1000.0, end_sec=u.end / 1000.0, text=u.text)
+                for u in (transcript.utterances or [])
+            ]
+            chapters = [
+                {"start_sec": ch.start / 1000.0, "end_sec": ch.end / 1000.0, "headline": ch.headline, "gist": ch.gist, "summary": ch.summary}
+                for ch in (transcript.chapters or [])
+            ]
+            entities = [
+                {"text": ent.text, "entity_type": ent.entity_type}
+                for ent in (transcript.entities or [])
+            ]
+
+            print(f"[AssemblyAIService-transcribe] Processed {len(utterances)} utterances")
+            return {
+                "transcript_text": transcript.text or "",
+                "utterances": utterances,
+                "summary": transcript.summary or "",
+                "chapters": chapters,
+                "entities": entities,
+                "error": None,
+            }
         except Exception as exc:  # noqa: BLE001
-            err_msg = f"AssemblyAI transcription call failed: {exc}"
-            print(f"[AssemblyAI-Error] {err_msg}")
+            print(f"[AssemblyAIService-transcribe] Transcription failed: {exc}")
             return {
                 "transcript_text": "",
                 "utterances": [],
                 "summary": "",
                 "chapters": [],
                 "entities": [],
-                "error": err_msg,
+                "error": str(exc),
             }
-
-        if transcript.status == aai.TranscriptStatus.error:
-            err_msg = f"Transcription failed: {transcript.error}"
-            print(f"[AssemblyAI-Error] {err_msg}")
-            return {
-                "transcript_text": "",
-                "utterances": [],
-                "summary": "",
-                "chapters": [],
-                "entities": [],
-                "error": err_msg,
-            }
-
-        utterances: list[Utterance] = []
-        if transcript.utterances:
-            for u in transcript.utterances:
-                utterances.append(
-                    Utterance(
-                        speaker=str(u.speaker),
-                        start_sec=u.start / 1000.0,
-                        end_sec=u.end / 1000.0,
-                        text=u.text,
-                    )
-                )
-
-        chapters: list[dict] = []
-        if transcript.chapters:
-            for ch in transcript.chapters:
-                chapters.append(
-                    {
-                        "start_sec": ch.start / 1000.0,
-                        "end_sec": ch.end / 1000.0,
-                        "headline": ch.headline,
-                        "gist": ch.gist,
-                        "summary": ch.summary,
-                    }
-                )
-
-        entities: list[dict] = []
-        if transcript.entities:
-            for ent in transcript.entities:
-                entities.append(
-                    {
-                        "text": ent.text,
-                        "entity_type": ent.entity_type,
-                    }
-                )
-
-        print(
-            f"[AssemblyAI-Complete] Successfully parsed transcript with {len(utterances)} utterances"
-        )
-        return {
-            "transcript_text": transcript.text or "",
-            "utterances": utterances,
-            "summary": transcript.summary or "",
-            "chapters": chapters,
-            "entities": entities,
-            "error": None,
-        }
-
-
 # endregion
