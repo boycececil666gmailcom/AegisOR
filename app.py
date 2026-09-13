@@ -1,6 +1,15 @@
 # region AegisOR Entrypoint
 import os
 
+try:
+    import spaces
+
+    @spaces.GPU
+    def init_gpu():
+        pass
+except (ImportError, Exception):
+    pass
+
 from src.ui import build_ui
 
 demo = build_ui()
