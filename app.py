@@ -1,11 +1,13 @@
 # region AegisOR Entrypoint
 import os
-import uvicorn
 
-from src.app import app
+from src.ui import build_ui
+
+demo = build_ui()
 
 if __name__ == "__main__":
-    host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", 7860))
-    uvicorn.run(app, host=host, port=port)
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=int(os.getenv("PORT", 7860)),
+    )
 # endregion

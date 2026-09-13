@@ -1,3 +1,16 @@
+---
+title: AegisOR
+emoji: 🏃
+colorFrom: blue
+colorTo: indigo
+sdk: gradio
+sdk_version: 6.27.0
+python_version: '3.12'
+app_file: app.py
+pinned: false
+license: mit
+---
+
 # AegisOR
 
 > Autonomous ambient clinical intelligence system and surgical safety guardrail enforcing The Universal Protocol and Closed-Loop Communication in sterile operating room environments using AssemblyAI.
